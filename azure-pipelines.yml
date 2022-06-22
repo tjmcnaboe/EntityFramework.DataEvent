@@ -1,0 +1,47 @@
+trigger:
+- master
+
+pool:
+  vmImage: ubuntu-latest
+
+
+variables:
+  solution: '**/*.sln'
+  buildPlatform: 'Any CPU'
+  buildConfiguration: 'Release'
+
+name: $(Build.DefinitionName)_$(Build.SourceBranchName)_$(Year:yyyy).$(Month).$(DayOfMonth)$(Rev:.r)
+
+
+steps:
+- task: UseDotNet@2
+  displayName: '.NET 6 SDK Install'
+  inputs:
+    packageType: 'sdk'
+    version: '6.0.x'
+
+- task: DotNetCoreCLI@2
+  displayName: 'NuGet Restore'
+  inputs:
+    command: 'restore'
+    projects: '**/*.csproj'
+    feedsToUse: 'select'
+    vstsFeed: '8771de7f-55e4-42d9-afd2-b068f18d0788'
+    
+
+- task: DotNetCoreCLI@2
+  displayName: 'NuGet pack'
+  inputs:
+    command: 'pack'
+    packagesToPack: '**/*.csproj'
+    versioningScheme: 'byPrereleaseNumber'
+    majorVersion: '1'
+    minorVersion: '0'
+    patchVersion: '0'
+
+- task: NuGetCommand@2
+  inputs:
+    command: 'push'
+    packagesToPush: '$(Build.ArtifactStagingDirectory)/**/*.nupkg;'
+    nuGetFeedType: 'internal'
+    publishVstsFeed: '8771de7f-55e4-42d9-afd2-b068f18d0788'
