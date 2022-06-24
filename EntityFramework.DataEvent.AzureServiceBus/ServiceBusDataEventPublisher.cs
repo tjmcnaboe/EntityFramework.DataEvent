@@ -26,7 +26,7 @@ namespace EntityFramework.DataEvent.AzureServiceBus
             this.PublishObjectDeleted = ops.PublishObjectDeleted;
             this.TopicName = ops.TopicName;
             this.PublishObjectUpdates = ops.PublishObjectUpdates;
-            _ServieBusConnection = configuration?.GetValue<string>("ServiceBusDataEventPublisherConnection");// ?? "Endpoint=sb://botrespond-dev.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=cuykC4iYay2bj2WhwXCABZ7ARCD1/D9gzMVg4Bto0v0=";
+            _ServieBusConnection = configuration?.GetValue<string>("ServiceBusDataEventPublisherConnection");
         }
 
 
