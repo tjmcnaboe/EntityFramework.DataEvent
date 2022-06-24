@@ -1,4 +1,9 @@
 # EntityFramework.DataEvent
+
+Entity Framework data event is a library designed to make it easy to use any entity framework database as a event source by plugging into Entity Frameworks Saving Changes and Saved Changes events. On saving changes ef checks to see if the type being saved implements the IDataEventEntity interface and if so flags the item to be sent to a down stream event handler. It does not immediately fire the event instead it saves the object to a list of items to be processed and then defers processing until the saved changes event fires indicating that the transaction was successful at which time it releases the corresponding data events.
+
+IDataEventPublisher is the interface that handles publishing your events to other components for processing. Currently the lib includes the implementation of a single data event publisher for Azure service bus but it is fairly simple to implement the interface and write your own publisher.
+
 Configure your services in program.cs
 
 ```csharp
