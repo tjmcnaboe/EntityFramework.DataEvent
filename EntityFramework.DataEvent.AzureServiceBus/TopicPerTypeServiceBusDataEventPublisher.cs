@@ -4,14 +4,16 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using System.Text;
 using System.Text.Json;
+using System.Linq;
 
 namespace EntityFramework.DataEvent.AzureServiceBus
 {
-    public class ServiceBusDataEventPublisher : IDataEventPublisher
+
+
+    public class TopicPerTypeServiceBusDataEventPublisher : IDataEventPublisher
     {
-        public string TopicName { get; set; }
         public Object RequestContext { get; set; }
-        public List<ServiceBusMessage> DataEvents { get; set; } = new List<ServiceBusMessage>();
+        public List<TptServiceBusMessage> DataEvents { get; set; } = new List<TptServiceBusMessage>();
         private string _ServieBusConnection { get; set; }
         public virtual bool PublishObjectUpdates { get; set; } = true;
         public virtual bool PublishObjectCreated { get; set; } = true;
@@ -19,23 +21,22 @@ namespace EntityFramework.DataEvent.AzureServiceBus
 
 
 
-        public ServiceBusDataEventPublisher(IOptions<ServiceBusDataEventPublisherOptions> options, IConfiguration configuration)
+        public TopicPerTypeServiceBusDataEventPublisher(IOptions<TPTServiceBusDataEventPublisherOptions> options, IConfiguration configuration)
         {
             var ops = options.Value;
             this.PublishObjectCreated = ops.PublishObjectCreated;
             this.PublishObjectDeleted = ops.PublishObjectDeleted;
-            this.TopicName = ops.TopicName;
             this.PublishObjectUpdates = ops.PublishObjectUpdates;
-            if (!string.IsNullOrEmpty(ops.ServieBusConnection))
+            if(!string.IsNullOrEmpty(ops.ServieBusConnection))
             {
                 _ServieBusConnection = ops.ServieBusConnection;
             }
             else
-                _ServieBusConnection = configuration?.GetValue<string>("ServiceBusDataEventPublisherConnection");
+            _ServieBusConnection = configuration?.GetValue<string>("ServiceBusDataEventPublisherConnection");
         }
 
 
-        public async Task OnDataItemCreated(object data,string correlationId)
+        public async Task OnDataItemCreated(object data, string correlationId)
         {
             if (PublishObjectCreated)
             {
@@ -43,12 +44,13 @@ namespace EntityFramework.DataEvent.AzureServiceBus
                 if (dataEvent != null)
                 {
                     var msgBody = JsonSerializer.Serialize(data);
-                    
-                    ServiceBusMessage serviceBusMessage = new ServiceBusMessage(Encoding.UTF8.GetBytes(msgBody));
+
+                    TptServiceBusMessage serviceBusMessage = new TptServiceBusMessage(Encoding.UTF8.GetBytes(msgBody));
                     serviceBusMessage.CorrelationId = correlationId;
                     serviceBusMessage.ApplicationProperties.Add("requestContext", RequestContext);
                     serviceBusMessage.ContentType = "/" + dataEvent.GetDataType();
                     serviceBusMessage.Subject = "created";
+                    serviceBusMessage.Topic = dataEvent.GetDataType().ToString();
                     DataEvents.Add(serviceBusMessage);
                 }
             }
@@ -62,11 +64,12 @@ namespace EntityFramework.DataEvent.AzureServiceBus
                 if (dataEvent != null)
                 {
                     var msgBody = JsonSerializer.Serialize(data);
-                    ServiceBusMessage serviceBusMessage = new ServiceBusMessage(Encoding.UTF8.GetBytes(msgBody));
+                    TptServiceBusMessage serviceBusMessage = new TptServiceBusMessage(Encoding.UTF8.GetBytes(msgBody));
                     serviceBusMessage.ContentType = "/" + dataEvent.GetDataType();
                     serviceBusMessage.Subject = "deleted";
                     serviceBusMessage.CorrelationId = correlationId;
                     serviceBusMessage.ApplicationProperties.Add("requestContext", RequestContext);
+                    serviceBusMessage.Topic = dataEvent.GetDataType().ToString();
                     DataEvents.Add(serviceBusMessage);
                 }
             }
@@ -82,11 +85,12 @@ namespace EntityFramework.DataEvent.AzureServiceBus
                 if (dataEvent != null)
                 {
                     var msgBody = JsonSerializer.Serialize(data);
-                    ServiceBusMessage serviceBusMessage = new ServiceBusMessage(Encoding.UTF8.GetBytes(msgBody));
+                    TptServiceBusMessage serviceBusMessage = new TptServiceBusMessage(Encoding.UTF8.GetBytes(msgBody));
                     serviceBusMessage.ContentType = "/" + dataEvent.GetDataType();
                     serviceBusMessage.Subject = "updated";
                     serviceBusMessage.CorrelationId = correlationId;
                     serviceBusMessage.ApplicationProperties.Add("requestContext", RequestContext);
+                    serviceBusMessage.Topic = dataEvent.GetDataType().ToString();
                     DataEvents.Add(serviceBusMessage);
                 }
             }
@@ -94,29 +98,35 @@ namespace EntityFramework.DataEvent.AzureServiceBus
 
         public async Task OnTransactionCompleted()
         {
+            var dictionary = DataEvents.GroupBy(e => e.Topic);
             await using var client = new ServiceBusClient(_ServieBusConnection);
-            ServiceBusSender sender = client.CreateSender(TopicName);
-            try
+            foreach(var item in dictionary)
             {
-                await sender.SendMessagesAsync(DataEvents);
-                DataEvents.Clear();
-            }
-            catch (Exception e)
-            {
-                var x = e.Message;
+                var values = item.ToList();
+                ServiceBusSender sender = client.CreateSender(item.Key);
                 try
                 {
-                    await sender.SendMessagesAsync(DataEvents);
-                    DataEvents.Clear();
+                    await sender.SendMessagesAsync(values);
+                    
                 }
-                catch 
-                { 
-                    //todo handle errors
-                    var x2 = e.Message;
-                    DataEvents.Clear();
+                catch (Exception e)
+                {
+                    var x = e.Message;
+                    try
+                    {
+                        await sender.SendMessagesAsync(values);
+                    }
+                    catch
+                    {
+                        //todo write to log
+                        var x2 = e.Message;
+                    }
+
                 }
-                
             }
+            DataEvents.Clear();
+
+
         }
 
         public async Task OnTransactionFailed()
@@ -127,14 +137,26 @@ namespace EntityFramework.DataEvent.AzureServiceBus
     }
 
 
-    public class ServiceBusDataEventPublisherOptions
+    public class TPTServiceBusDataEventPublisherOptions
     {
-        public string TopicName { get; set; }
         public string ServieBusConnection { get; set; }
         public virtual bool PublishObjectUpdates { get; set; } = true;
         public virtual bool PublishObjectCreated { get; set; } = true;
         public virtual bool PublishObjectDeleted { get; set; } = true;
     }
 
+    public class TptServiceBusMessage : ServiceBusMessage
+    {
+        public string Topic { get; set; }
+        public TptServiceBusMessage() : base()
+        { }
+        public TptServiceBusMessage(string body):base(body)
+        {
 
+        }
+        public TptServiceBusMessage(BinaryData body): base(body)
+        { }
+        public TptServiceBusMessage (ReadOnlyMemory<byte> body) : base(body)
+        { }
+    }
 }
